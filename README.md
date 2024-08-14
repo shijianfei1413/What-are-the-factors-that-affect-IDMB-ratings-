@@ -41,7 +41,7 @@ We investigated the relationship between film genres and IMDb ratings using line
 - **Genres**: Drama and certain genre combinations are particularly appealing to audiences. Filmmakers should consider these insights for future projects.
 
 ## Final Report
-The full analysis and detailed conclusions are available in the [Final Report](APAN 5205 Project Final Report-1.pdf).
+The full analysis and detailed conclusions are available in the [Final Report](https://github.com/shijianfei1413/What-are-the-factors-that-affect-IDMB-ratings-/blob/c3b7be4fc390b5d99fb1478c3f193878806c7885/APAN%205205%20Project%20Final%20Report-1.pdf).
 
 ## Presentation
 A summary of our findings is available in the project presentation: [Presentation](path_to_presentation).
