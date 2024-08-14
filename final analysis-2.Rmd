@@ -1,0 +1,270 @@
+---
+title: "Final Project"
+output:
+  html_document: default
+  pdf_document: default
+date: "2023-08-08"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+library(tidyverse)  # For data manipulation and visualization
+library(magrittr)  # For piping operator
+library(tidytext)  # For text analysis
+library(lexicon)  # For sentiment analysis
+library(stringi)
+library(tm)
+library(ggthemes)
+library(rpart)
+library(rpart.plot)
+library(caret)
+
+movies <- read_csv("cleandata.csv")
+
+```
+
+### 1. Influence of movie duration on movie rating (x=duration, y=rating) use linear regression.
+
+```{r}
+movies %>% 
+  ggplot(aes(duration,imbd_rating)) + 
+  geom_point() + 
+  geom_smooth(method = "lm",se = F,formula = y~x)
+```
+
+From the scatter plot, it can be found that duration and rating have a certain relationship. As duration increases, rating tends to increase.
+
+```{r}
+cor.test(movies$imbd_rating,movies$duration)
+```
+
+The results from Pearson's product-moment correlation show that the correlation between the duration of the movie and the rating is 0.2794597, which indicates that there is a certain degree of positive correlation between the two, that is, the duration of the movie increases, and the rating may also increase.
+
+```{r}
+fit1 <- lm(imbd_rating ~ duration,data = movies)
+summary(fit1)
+```
+
+From the results of the linear regression model, the estimated coefficient for duration is 0.0021199, which means that if the duration of a movie increases by one unit, then the rating of the movie is expected to increase by 0.0021199 units, assuming other factors remain unchanged.
+
+In addition, the p-value of the model is 7.25e-06, which is much smaller than 0.05, which means that the duration of the movie has a significant impact on the rating of the movie.
+
+However, the explanatory power of the model (R-squared) is only 0.0781, which means that the length of the movie can only explain 7.81% of the variation in movie ratings, and a large part of the variation is caused by other factors not included in the model .
+
+In general, the length of the movie has a certain impact on the rating of the movie, but the degree of influence is not large.
+
+
+### 2. The Impact of Film Critics and Reviews on movie ratings regression tree with Emotion features
+
+- data preparation
+```{r}
+m1<-cbind(imbd_rating=movies$imbd_rating,movies[,c(29:39)])
+set.seed(123)
+
+idx = sample(nrow(m1), size = 0.7*nrow(m1))
+train = m1[idx,]
+test = m1[-idx,]
+
+```
+
+
+- CART
+
+```{r}
+reg2 = lm(imbd_rating~., train)
+summary(reg2)
+```
+
+```{r}
+# Predictions
+pred_reg2 = predict(reg2,newdata=test)
+RMSE(pred_reg2,test$imbd_rating)
+R2(pred_reg2,test$imbd_rating)
+```
+
+The model's intercept is 8.464, meaning if all predictors are zero, the expected value of `imbd_rating` would be 8.464.
+
+The coefficients for all predictors are very close to zero, suggesting that these variables have a relatively small influence on `imbd_rating`. The p-values for all predictors are greater than 0.05, indicating that the influence of these predictors on `imbd_rating` is not statistically significant.
+
+The model's R-squared value is 0.04592, and the adjusted R-squared value is -0.01847. Generally, the closer this value is to 1, the better the model fits the data. However, in this model, the R-squared value is very low, suggesting that the model does not explain much of the variability in the dependent variable.
+
+The model's F-statistic is 0.7131, with a corresponding p-value of 0.7248. This suggests that, as a whole, the predictors in the model are not statistically significantly related to the dependent variable.
+
+
+### 2. The Impact of Film Critics and Reviews on movie ratings regression tree with TF-IDF features.
+
+```{r}
+xdtm_tfidf<-movies[,c(53:ncol(movies))]
+```
+
+- The horizontal bar chart below looks at the top 20 terms term frequency inverse document frequency weight.
+```{r}
+data.frame(term = colnames(xdtm_tfidf), tfidf = colMeans(xdtm_tfidf)) %>%
+  arrange(desc(tfidf))%>%
+  top_n(20) %>% 
+  ggplot(aes(reorder(term,tfidf), tfidf))+
+  geom_col(fill = "dodgerblue")+
+  labs(x = "trem") + 
+  coord_flip() + 
+  theme_economist()
+```
+
+- data preparation
+```{r}
+d1<-cbind(imbd_rating=movies$imbd_rating,xdtm_tfidf)
+set.seed(123)
+
+idx = sample(nrow(movies), size = 0.7*nrow(movies))
+train = d1[idx,]
+test = d1[-idx,]
+
+```
+
+
+- CART
+
+```{r}
+tree = rpart(imbd_rating~., train)
+rpart.plot(tree)
+```
+
+```{r}
+# Predictions
+pred_tree = predict(tree,newdata=test)
+RMSE(pred_tree,test$imbd_rating)
+R2(pred_tree,test$imbd_rating)
+```
+
+From the results of the above regression tree model, we can see that the root mean square error (RMSE) of the prediction of the impact of movie reviews and ratings on movie ratings is 0.2699699, which is a measure of prediction error. The smaller the value, the better the predictive model. The higher the accuracy. On the other hand, the coefficient of determination (R-squared) of the model is 0.03317102. This value represents the variability in the dependent variable that the model can explain. The closer the value is to 1, the stronger the explanatory power of the model.
+
+In contrast, the explanatory power (R-square) of the previous linear regression model is 0.0781, which is not high. This may mean that the decision tree model may be slightly worse than the regression tree model on this issue.
+
+
+
+### 3.Which movie genres tend to receive higher ratings from audience.
+
+```{r}
+# data preparation
+temp1 <- movies[,c(4,7:27)]
+reg <- lm(imbd_rating ~ .-1,data = temp1)
+summary(reg)
+```
+
+From the results of the regression model, it can be seen that the coefficients of all movie types are significant, and the R-squared of the model = 0.9545, which is very close to 1, which means that the regression model can explain the data well, through the model coefficient The size of the film can tell which type of movie is the most popular.
+
+
+
+1.What are the highest rated genres?
+```{r message=FALSE, warning=FALSE}
+data.frame(genre=names(coef(reg)),
+           mean_rating = unname(coef(reg))) %>% 
+  ggplot(aes(reorder(genre,desc(mean_rating)),mean_rating)) + 
+  geom_bar(stat = "identity",fill="skyblue") + 
+  labs(x = "Genre",y = "Mean Rating") +
+  ggbreak::scale_y_break(c(1,1.5),scales = 1,space = 0.2) + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) 
+  
+```
+
+
+```{r}
+sort(coef(reg),decreasing = T)[1]
+```
+
+From the results above, it can be seen that the Drama genre has the highest ratings and is the most popular movie.
+
+
+
+2.What are the highest rated combination when the movies include multiple genres?
+```{r}
+temp2 <- movies[,c(3,4,7:27)]
+# Create a function to find out the genre combination for each movie
+get_genre_combination <- function(row) {
+  genres <- names(row)[row == 1]
+  return(paste(sort(genres), collapse = ", "))
+}
+
+# Apply this function to each row
+temp2$GenreCombination <- apply(temp2[,-c(1,2)], 1, get_genre_combination)
+
+# Calculate the average rating and number of votes for each genre combination
+result <- temp2 %>%
+  group_by(GenreCombination) %>%
+  summarise(AverageRating = mean(imbd_rating), NumberOfVotes = sum(imbd_votes)) %>%
+  arrange(desc(AverageRating))
+
+# Get the top 5 genre combinations
+top5 <- head(result, 5)
+top5
+```
+
+
+
+3.Does putting more genres in a movie result in higher ratings?
+```{r}
+# Create a function to calculate the number of genres for each movie
+get_genre_count <- function(row) {
+  return(sum(row == 1))
+}
+
+# Apply this function to each row
+temp2$GenreCount <- apply(temp2[,-c(1,2)], 1, get_genre_count)
+
+# Calculate the average rating for each genre count
+result <- temp2 %>%
+  group_by(GenreCount) %>%
+  summarise(AverageRating = mean(imbd_rating)) %>%
+  arrange(GenreCount)
+result 
+
+```
+
+
+
+3.How are the ratings of the most produced genres movie types change over time?
+```{r}
+temp3 <- movies[,c(2,4,7:27)]
+# Create a function to calculate the genre combination for each movie
+get_genre_combination <- function(row) {
+  genres <- names(row)[row == 1]
+  return(paste(sort(genres), collapse = ", "))
+}
+
+# Apply this function to each row
+temp3$GenreCombination <- apply(temp3[,-c(1,2)], 1, get_genre_combination)
+
+# Get the top ten genre combinations
+top_ten_combinations <- temp3 %>%
+  count(GenreCombination) %>%
+  arrange(desc(n)) %>%
+  head(10) %>%
+  pull(GenreCombination)
+
+# Filter the data for the top ten genre combinations
+filtered_data <- temp3[temp3$GenreCombination %in% top_ten_combinations,]
+
+# Create a grouped line plot
+ggplot(filtered_data, aes(x = year, y = imbd_rating, group = GenreCombination, color = GenreCombination)) +geom_point()+
+  geom_line() +
+  labs(title = "Average Rating Over Time for Top Ten Genre Combinations",
+       x = "Year",
+       y = "Average Rating") +
+  theme_minimal()
+
+
+```
+
+
+
+
+
+
+
+
+

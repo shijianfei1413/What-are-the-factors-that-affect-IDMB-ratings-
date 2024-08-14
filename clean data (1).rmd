@@ -1,0 +1,166 @@
+---
+title: "deal"
+author: '1'
+date: "2023-07-08"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(tidyverse)  # For data manipulation and visualization
+library(magrittr)  # For piping operator
+library(tidytext)  # For text analysis
+library(lexicon)  # For sentiment analysis
+library(tm)
+library(stringi)
+# Read the movies dataset from a CSV file
+movies <- read_csv("~/Desktop/final project/movies.csv")
+
+# Convert the "imbd_votes" column to numeric by removing commas
+movies$imbd_votes <- as.numeric(gsub(",", "", movies$imbd_votes))
+
+# Split the "genre" column into multiple rows and create a dummy variable
+movies1 <- movies %>%
+  separate_rows(genre, sep = ",") %>%
+  mutate(dummy = 1)
+
+# Spread the "genre" column into multiple columns with dummy variable values
+movies1 <- movies1 %>%
+  spread(genre, dummy, fill = 0)
+
+# Extract hours and minutes from the "duration" column and calculate the total duration in minutes
+hours <- as.numeric(sub("h.*", "", movies1$duration))
+
+hours <- ifelse(is.na(hours), 0, hours)
+
+minutes <- as.numeric(gsub("m", "", sub(".*h |m", "", movies1$duration)))
+
+minutes <- ifelse(is.na(minutes), 0, minutes)
+
+movies1$duration <- hours * 60 + minutes
+
+# Count the number of words in each movie's review content
+count <- movies1 %>%
+  select(movie_id, review_content) %>%
+  group_by(movie_id) %>%
+  unnest_tokens(output = word, input = review_content) %>%
+  ungroup() %>%
+  anti_join(stop_words) %>%
+  filter(!grepl("[[:punct:]]", word)) %>%
+  group_by(movie_id) %>%
+  dplyr::summarize(count = n())
+
+# Get the NRC sentiment lexicon
+nrc <- get_sentiments('nrc')
+
+# Calculate the count of sentiment words in each movie's review content
+sentiment_word <- movies1 %>%
+  group_by(movie_id) %>%
+  unnest_tokens(output = word, input = review_content) %>%
+  anti_join(stop_words) %>%
+  filter(!grepl("[[:punct:]]", word)) %>%
+  inner_join(nrc) %>%
+  group_by(movie_id, sentiment) %>%
+  count() %>%
+  pivot_wider(names_from = sentiment, values_from = n) %>%
+  select(movie_id, positive, negative, trust, anticipation, joy, fear, anger, sadness, surprise, disgust) %>%
+  mutate_at(.vars = 2:11, .funs = function(x) replace_na(x, 0)) %>%
+  ungroup()
+
+
+# Calculate the average sentiment score for each movie's review content
+sentiment <- movies1 %>%
+  select(movie_id, review_content) %>%
+  group_by(movie_id) %>%
+  unnest_tokens(output = word, input = review_content) %>%
+  anti_join(stop_words) %>%
+  filter(!grepl("[[:punct:]]", word)) %>%
+  inner_join(key_sentiment_jockers) %>%
+  dplyr::summarize(reviewSentiment = mean(value))
+
+
+# Tag the words as verbs, nouns, and adjectives using the parts_of_speech function
+tags <- movies1 %>%
+  group_by(movie_id) %>%
+  unnest_tokens(output = word, input = review_content) %>%
+  anti_join(stop_words) %>%
+  filter(!grepl("[[:punct:]]", word))%>%
+  inner_join(parts_of_speech,by="word")
+
+# Count the number of each part of speech
+pos_counts <- tags%>%
+  count(pos)%>%drop_na()
+
+pos_tags_wide <- pos_counts %>%
+  spread(key = pos, value = n, fill = "")
+
+
+
+
+# Merge the count and sentiment word data with the movies dataset
+movies2 <- movies1 %>% left_join(count, by = "movie_id")
+
+movies2 <- movies2 %>% left_join(sentiment_word, by = "movie_id")
+
+movies2 <- movies2 %>% left_join(sentiment, by = "movie_id")
+
+movies2 <- movies2 %>% left_join(pos_tags_wide, by = "movie_id")
+
+# Remove unnecessary columns from the movies dataset
+movies2 <- movies2 %>% select(-c(1, 3,5, 10:21))
+
+# Display the first few rows of the modified movies dataset
+head(movies2)
+
+
+# Create a corpus
+corpus = Corpus(VectorSource(movies$review_content))
+# Clean text
+corpus = tm_map(corpus,FUN = content_transformer(tolower))
+corpus = tm_map(corpus,FUN = content_transformer(FUN = function(x) gsub(pattern = 'http[[:alnum:][:punct:]]*',replacement = ' ',x = x)))
+corpus <- tm_map(corpus, removeNumbers)
+corpus = tm_map(corpus,FUN = removePunctuation)
+corpus = tm_map(corpus,FUN = removeWords,c(stopwords('english')))
+corpus = tm_map(corpus,FUN = stripWhitespace)
+corpus = tm_map(corpus, content_transformer(str_trim))
+
+# Create a dictionary
+dict = findFreqTerms(DocumentTermMatrix(Corpus(VectorSource(movies$review_content))),
+                     lowfreq = 0)
+dict_corpus = Corpus(VectorSource(dict))
+
+# Stem document
+corpus = tm_map(corpus,FUN = stemDocument)
+
+# Document Term Matrix - tfidf
+dtm_tfidf = DocumentTermMatrix(x=corpus,
+                               control = list(weighting=function(x) weightTfIdf(x,normalize=F)))
+xdtm_tfidf = removeSparseTerms(dtm_tfidf,sparse = 0.95)
+xdtm_tfidf = as.data.frame(as.matrix(xdtm_tfidf))
+
+
+head(sort(colSums(xdtm_tfidf),decreasing = T),20)
+
+
+```
+
+
+
+```{r}
+movies_tfidf = cbind(movies2,xdtm_tfidf)
+movies_tfidf <- movies_tfidf[,!duplicated(colnames(movies_tfidf))]
+
+write.csv(movies_tfidf ,"cleandata.csv",row.names=F)
+```
+
+
+
+
+
+
+
+
+
+
+
+
